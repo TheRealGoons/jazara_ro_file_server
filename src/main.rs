@@ -1,9 +1,9 @@
-use std::env;
+use std::{env, fs};
 
 use dotenvy::dotenv;
+use rocket::fs::NamedFile;
 use rocket::http::Status;
 use rocket::request::{self, FromRequest, Outcome, Request};
-use rocket::{form::Form, fs::TempFile};
 
 #[macro_use]
 extern crate rocket;
@@ -37,7 +37,10 @@ impl<'r> FromRequest<'r> for SecretKey {
                 if is_key_valid(keys[0]) {
                     return request::Outcome::Success(SecretKey(keys[0].to_string()));
                 } else {
-                    return request::Outcome::Failure((Status::BadRequest, AuthError::InvalidKey));
+                    return request::Outcome::Failure((
+                        Status::Unauthorized,
+                        AuthError::InvalidKey,
+                    ));
                 }
             }
         }
@@ -45,21 +48,49 @@ impl<'r> FromRequest<'r> for SecretKey {
 }
 
 #[get("/")]
-fn hello() -> String {
-    String::from("boobs")
+async fn download_file() -> NamedFile {
+    NamedFile::open("clientinfo.xml")
+        .await
+        .expect("no xml file")
 }
 
-#[post("/download")]
-async fn download_file() -> () {}
-
-#[post("/upload", data = "<file>")]
-async fn upload_file(_key: SecretKey, mut file: Form<TempFile<'_>>) -> std::io::Result<()> {
-    file.persist_to("./clientinfo.xml").await
+#[get("/upload/<ip>")]
+async fn upload_file(_key: SecretKey, ip: String) {
+    create_xml_file(ip)
 }
 
 #[launch]
 fn launch() -> _ {
     rocket::build()
-        .mount("/", routes![hello])
+        .mount("/", routes![download_file])
         .mount("/file", routes![upload_file])
+}
+
+fn create_xml_file(ip: String) {
+    let xml_before = "<?xml version=\"1.0\" encoding=\"euc-kr\" ?>
+<clientinfo>
+<desc>Jazara</desc>
+	<servicetype>korea</servicetype>
+	<servertype>primary</servertype>
+	<connection>
+		<display>JazaraRO</display>
+      		<address>";
+    let xml_after = "</address>
+      		<port>6900</port>
+      		<version>55</version>
+      		<langtype>19</langtype>
+		<registrationweb>https://www.youtube.com/watch?v=dQw4w9WgXcQ</registrationweb>
+		<loading>
+			<image>loading00.jpg</image>
+			<image>loading01.jpg</image>
+			<image>loading02.jpg</image>
+			<image>loading03.jpg</image>
+			<image>loading04.jpg</image>
+			<image>loading05.jpg</image>
+			<image>loading06.jpg</image>
+		</loading>
+   	</connection>
+</clientinfo>";
+    let xml = [xml_before, &ip, xml_after].join("");
+    fs::write("clientinfo.xml", xml).expect("failed to write xmlfile");
 }
